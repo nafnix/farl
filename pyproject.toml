@@ -1,7 +1,7 @@
 [project]
 name = "navio"
 version = "0.1.0"
-description = "Add your description here"
+description = "A FastAPI rate limiting library."
 readme = "README.md"
 authors = [
     { name = "nafnix", email = "uwu@nafnix.com" }
@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.116.1",
     "limits>=5.4.0",
+    "slowapi>=0.1.9",
 ]
 
 [build-system]
@@ -18,9 +19,25 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+    "asgiref>=3.9.1",
     "devtools>=0.12.2",
     "ruff>=0.12.5",
 ]
 redis = [
     "redis>=6.2.0",
 ]
+tests = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["D", "ANN", "E114", "E117", "B008", "ISC001", "RUF002", "PGH003", "FA102", "PLW2901", "DTZ005", "COM812", "TCH", "TD", "FIX001", "FIX002", "S605", "S607", "S101", "RUF001", "EM101", "TRY003", "ERA001", "FAST002", "EM102", "PLR0913", "C901", "RUF003", "N818"]
+
+
+# https://docs.astral.sh/ruff/settings/#lintisort
+[tool.ruff.lint.isort]
+case-sensitive = true
+lines-after-imports = 2
