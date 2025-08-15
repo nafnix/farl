@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import pytest
-from pydantic import RedisDsn
 
 from farl.base import AsyncFarl, Farl
 
