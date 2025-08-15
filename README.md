@@ -2,7 +2,6 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/farl.svg)](https://badge.fury.io/py/farl)
-[![Coverage Status](https://coveralls.io/repos/github/nafnix/farl/badge.svg?branch=master)](https://coveralls.io/github/nafnix/farl?branch=master)
 [![Code Coverage](https://codecov.io/gh/nafnix/farl/branch/master/graph/badge.svg)](https://codecov.io/gh/nafnix/farl)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
