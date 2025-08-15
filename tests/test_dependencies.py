@@ -117,3 +117,51 @@ def test_rate_limits(api: TestClient):
 
     assert excinfo.type is QuotaExceeded
     assert excinfo.value.data.model_dump()["violated-policies"] == ["a", "b-premonth"]
+
+
+@app.get(
+    "/mismatched-costs-partition-keys",
+    dependencies=[
+        Depends(
+            rate_limit(
+                {"amount": 1},
+                farl=Farl(),
+                get_partition_key=lambda: ["key1", "key2"],
+                get_cost=lambda: [1],  # Only one cost for two partition keys
+            )
+        )
+    ],
+)
+def mismatched_costs_partition_keys(): ...
+
+
+def test_mismatched_costs_partition_keys(api: TestClient):
+    with pytest.raises(
+        ValueError,
+        match=r"Number of costs \(1\) must match number of partition keys \(2\)",
+    ):
+        api.get("/mismatched-costs-partition-keys")
+
+
+@app.get(
+    "/mismatched-partition-keys-costs",
+    dependencies=[
+        Depends(
+            rate_limit(
+                {"amount": 1},
+                farl=Farl(),
+                get_partition_key=lambda: ["key1"],
+                get_cost=lambda: [1, 2, 3],  # Three costs for one partition key
+            )
+        )
+    ],
+)
+def mismatched_partition_keys_costs(): ...
+
+
+def test_mismatched_partition_keys_costs(api: TestClient):
+    with pytest.raises(
+        ValueError,
+        match=r"Number of costs \(3\) must match number of partition keys \(1\)",
+    ):
+        api.get("/mismatched-partition-keys-costs")

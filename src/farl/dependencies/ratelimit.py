@@ -3,7 +3,6 @@ import inspect
 import logging
 from collections.abc import Callable
 from copy import copy
-from functools import partial
 
 from fastapi import Depends, Request
 from limits import RateLimitItem
@@ -12,6 +11,7 @@ from farl.constants import STATE_KEY
 from farl.exceptions import FarlError, QuotaExceeded
 from farl.types import (
     AnyFarlProtocol,
+    Cost,
     CostResult,
     GetCostDependency,
     GetKeyDependency,
@@ -150,13 +150,13 @@ async def _get_cost(
     return result
 
 
-async def _partition_handle(
+async def _check_partition(
     *,
     request: Request,
     key: KeyResult | None,
     farl: AnyFarlProtocol,
     partition_key: str,
-    cost: CostResult | None,
+    cost: Cost,
     value: RateLimitPolicy,
     farl_state: FarlState,
     default_policy_name: str | None,
@@ -165,8 +165,6 @@ async def _partition_handle(
     keys = await _get_keys(request, key, farl, partition_key)
 
     limit_values = parse_rate_limit_value(value)
-
-    cost = await _get_cost(request, cost, farl)
 
     if len(limit_values) == 1:
         value = _update_namespace(farl.namespace, limit_values[0])
@@ -214,11 +212,7 @@ def rate_limit(
     error_class: type[FarlError] | None = QuotaExceeded,
     farl: AnyFarlProtocol | None = None,
 ):
-    check_partition = partial(
-        _partition_handle,
-        default_policy_name=policy_name,
-        quota_unit=quota_unit,
-    )
+    default_policy_name = policy_name
 
     value_dep = policy if callable(policy) else _value(policy)
     key_dep = get_key if callable(get_key) else _value(get_key)
@@ -246,18 +240,36 @@ def rate_limit(
         if isinstance(partition_key, str):
             partition_key = [partition_key]
 
+        costs = await _get_cost(request, cost, _farl)
+
+        if isinstance(costs, int):
+            costs = [costs for _ in partition_key]
+        elif cost is None:
+            costs = [1 for _ in partition_key]
+
+        partition_keys = partition_key
+
+        # Validate that costs and partition_keys have the same length
+        if len(costs) != len(partition_keys):
+            raise ValueError(
+                f"Number of costs ({len(costs)}) must match number "
+                f"of partition keys ({len(partition_keys)})"
+            )
+
         await asyncio.gather(
             *[
-                check_partition(
+                _check_partition(
                     request=request,
                     key=key,
                     farl=_farl,
-                    partition_key=i,
+                    partition_key=partition_key,
                     cost=cost,
                     value=value,
                     farl_state=farl_state,
+                    default_policy_name=default_policy_name,
+                    quota_unit=quota_unit,
                 )
-                for i in partition_key
+                for partition_key, cost in zip(partition_keys, costs, strict=True)
             ]
         )
 

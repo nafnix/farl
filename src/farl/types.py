@@ -16,7 +16,8 @@ GetKeyDependency = Callable[..., KeyResult | Awaitable[KeyResult]]
 GetRequestKey = Callable[[Request], KeyResult | Awaitable[KeyResult]]
 
 
-CostResult = int
+Cost = int
+CostResult = Cost | Sequence[Cost]
 GetCostDependency = Callable[..., CostResult | Awaitable[CostResult]]
 GetRequestCost = Callable[[Request], CostResult | Awaitable[CostResult]]
 
