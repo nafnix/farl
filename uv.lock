@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 
 [[package]]
@@ -190,7 +190,7 @@ wheels = [
 
 [[package]]
 name = "farl"
-version = "0.0.1"
+version = "0.0.6"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
