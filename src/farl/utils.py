@@ -15,11 +15,11 @@ from limits.limits import (
 )
 from limits.util import parse_many
 
-from navio.exceptions import NavioError
+from farl.exceptions import FarlError
 
 
 if TYPE_CHECKING:
-    from navio.types import AnyNavioProtocol, RateLimitArgument
+    from farl.types import AnyFarlProtocol, RateLimitPolicy
 
 
 _TimeUnit = Literal[
@@ -84,7 +84,7 @@ class RateLimitTimeArg:
 
 
 def parse_rate_limit_value(
-    *args: "RateLimitArgument",
+    *args: "RateLimitPolicy",
 ):
     result: list[RateLimitItem] = []
     for i in args:
@@ -117,7 +117,7 @@ class HeaderRateLimit(NamedTuple):
     remaining: int
     reset_timestamp: float | None = None
     partition_key: str | bytes | None = None
-    error_class: type[NavioError] | None = None
+    error_class: type[FarlError] | None = None
 
     @property
     def quota_reset_seconds(self) -> int | None:
@@ -169,8 +169,8 @@ class HeaderRateLimitPolicy(NamedTuple):
         return ";".join(values)
 
 
-class NavioState(TypedDict):
-    navio: NotRequired["AnyNavioProtocol"]
+class FarlState(TypedDict):
+    farl: NotRequired["AnyFarlProtocol"]
     policy: list[HeaderRateLimitPolicy]
     state: list[HeaderRateLimit]
     violated: list[HeaderRateLimit]

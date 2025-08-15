@@ -1,3 +1,6 @@
 {
-  "cSpell.words": ["Navio", "satisifed"]
+  "cSpell.words": ["satisifed"],
+  "python.testing.pytestArgs": ["tests"],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }

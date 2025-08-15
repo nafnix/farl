@@ -1,6 +1,6 @@
 [project]
-name = "navio"
-version = "0.1.0"
+name = "farl"
+version = "0.0.6"
 description = "A FastAPI rate limiting library."
 readme = "README.md"
 authors = [
@@ -10,7 +10,6 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.116.1",
     "limits>=5.4.0",
-    "slowapi>=0.1.9",
 ]
 
 [build-system]

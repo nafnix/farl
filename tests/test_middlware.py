@@ -1,13 +1,13 @@
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from navio.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
-from navio.middleware import NavioMiddleware
-from navio.utils import HeaderRateLimit, HeaderRateLimitPolicy, NavioState
+from farl.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
+from farl.middleware import FarlMiddleware
+from farl.utils import HeaderRateLimit, HeaderRateLimitPolicy, FarlState
 
 
 app = FastAPI()
-app.add_middleware(NavioMiddleware)
+app.add_middleware(FarlMiddleware)
 
 
 a_policy = HeaderRateLimitPolicy("testvalue", 10, None, 60, "/a:GET")
@@ -17,10 +17,10 @@ a_r = HeaderRateLimit(a_policy.policy, 1, 23, a_policy.partition_key)
 @app.get("/a")
 def a(request: Request):
     state: dict = request.scope["state"]
-    navio_state: NavioState = state[STATE_KEY]
+    farl_state: FarlState = state[STATE_KEY]
 
-    navio_state["policy"].append(a_policy)
-    navio_state["state"].append(a_r)
+    farl_state["policy"].append(a_policy)
+    farl_state["state"].append(a_r)
 
 
 b_policy = [
@@ -36,9 +36,9 @@ b_r = [
 @app.get("/b")
 async def b(request: Request):
     state: dict = request.scope["state"]
-    navio_state: NavioState = state[STATE_KEY]
-    navio_state["policy"].extend(b_policy)
-    navio_state["state"].extend(b_r)
+    farl_state: FarlState = state[STATE_KEY]
+    farl_state["policy"].extend(b_policy)
+    farl_state["state"].extend(b_r)
 
 
 c_policy = [
@@ -56,9 +56,9 @@ c_r = [
 @app.get("/c")
 async def c(request: Request):
     state: dict = request.scope["state"]
-    navio_state: NavioState = state[STATE_KEY]
-    navio_state["policy"].extend(c_policy)
-    navio_state["state"].extend(c_r)
+    farl_state: FarlState = state[STATE_KEY]
+    farl_state["policy"].extend(c_policy)
+    farl_state["state"].extend(c_r)
 
 
 d_policy = [
@@ -76,9 +76,9 @@ d_r = [
 @app.get("/d")
 async def d(request: Request):
     state: dict = request.scope["state"]
-    navio_state: NavioState = state[STATE_KEY]
-    navio_state["policy"].extend(d_policy)
-    navio_state["state"].extend(d_r)
+    farl_state: FarlState = state[STATE_KEY]
+    farl_state["policy"].extend(d_policy)
+    farl_state["state"].extend(d_r)
 
 
 def test_middleware():

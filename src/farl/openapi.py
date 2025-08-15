@@ -1,8 +1,8 @@
-from navio.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY
-from navio.exceptions import NavioError
+from farl.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY
+from farl.exceptions import FarlError
 
 
-def openapi(model: type[NavioError]):
+def openapi(model: type[FarlError]):
     return {
         "model": model,
         "headers": {

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, create_model
 
 
-class NavioError(Exception):
+class FarlError(Exception):
     status: int
     type: str
     title: str
@@ -40,7 +40,7 @@ class NavioError(Exception):
 
 # 超出配额
 # 如果服务器希望通知客户端其发送的请求超出了一个或多个配额策略，则可以使用此问题类型。
-class QuotaExceeded(NavioError):
+class QuotaExceeded(FarlError):
     status = 429
 
     type = "https://iana.org/assignments/http-problem-types#quota-exceeded"
@@ -52,21 +52,21 @@ class QuotaExceeded(NavioError):
 # 客户端发送的请求超出当前无法满足的范围，则可以使用此问题类型。
 # 服务器可以选择包含一个 RateLimit-Policy 字段，指示新的暂时较低的配额。
 # 此问题类型将扩展成员“violated-policies”定义为一个字符串数组，其值为超出配额的策略名称
-class TemporaryReducedCapacity(NavioError):
+class TemporaryReducedCapacity(FarlError):
     status = 503
 
     type = "https://iana.org/assignments/http-problem-types#temporary-reduced-capacity"
     title = "Request cannot be satisifed due to temporary server capacity constraints"
 
 
-class AbnormalUsageDetected(NavioError):
+class AbnormalUsageDetected(FarlError):
     status = 429
 
     type = "https://iana.org/assignments/http-problem-types#abnormal-usage-detected"
     title = "Request not satisifed due to detection of abnormal request pattern"
 
 
-def navio_exceptions_handler(_request: Request, exc):
+def farl_exceptions_handler(_request: Request, exc):
     return JSONResponse(
         exc.data.model_dump(exclude_unset=True),
         status_code=exc.status,

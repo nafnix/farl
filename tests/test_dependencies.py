@@ -2,9 +2,9 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from navio import AsyncNavio, Navio
-from navio.dependencies import rate_limit, rate_limits
-from navio.exceptions import QuotaExceeded
+from farl import AsyncFarl, Farl
+from farl.dependencies import rate_limit, rate_limits
+from farl.exceptions import QuotaExceeded
 
 
 app = FastAPI()
@@ -17,15 +17,15 @@ def api():
 
 
 @app.get(
-    "/unset-navio",
+    "/unset-farl",
     dependencies=[Depends(rate_limit({"amount": 1}))],
 )
-def unset_navio(): ...
+def unset_farl(): ...
 
 
-def test_unset_navio(api: TestClient):
-    with pytest.raises(ValueError, match="navio instance is required") as excinfo:
-        api.get("/unset-navio")
+def test_unset_farl(api: TestClient):
+    with pytest.raises(ValueError, match="farl instance is required") as excinfo:
+        api.get("/unset-farl")
     assert excinfo.type is ValueError
 
 
@@ -35,7 +35,7 @@ def test_unset_navio(api: TestClient):
         Depends(
             rate_limit(
                 {"amount": 1},
-                navio=Navio(),
+                farl=Farl(),
             )
         )
     ],
@@ -63,7 +63,7 @@ def test_raise_exc(api: TestClient):
                     {"amount": 1},
                     {"amount": 2, "multiples": 3, "time": "second"},
                 ],
-                navio=Navio(),
+                farl=Farl(),
                 policy_name="multiple",
             )
         )
@@ -90,7 +90,7 @@ def test_multiple_ratelimit(api: TestClient):
             rate_limits(
                 rate_limit(
                     {"amount": 1},
-                    navio=Navio(namespace="test"),
+                    farl=Farl(namespace="test"),
                     policy_name="a",
                     error_class=None,
                 ),
@@ -99,7 +99,7 @@ def test_multiple_ratelimit(api: TestClient):
                         {"amount": 1, "time": "month"},
                         {"amount": 2, "multiples": 3, "time": "second"},
                     ],
-                    navio=AsyncNavio(),
+                    farl=AsyncFarl(),
                     policy_name="b",
                     error_class=None,
                 ),

@@ -2,42 +2,42 @@ from typing import cast
 
 from starlette.datastructures import MutableHeaders
 
-from navio.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
-from navio.utils import NavioState
+from farl.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
+from farl.utils import FarlState
 
-from .types import AsyncNavioProtocol, NavioProtocol
+from .types import AsyncFarlProtocol, FarlProtocol
 
 
-class NavioMiddleware:
+class FarlMiddleware:
     def __init__(
         self,
         app,
-        navio: NavioProtocol | AsyncNavioProtocol | None = None,
+        farl: FarlProtocol | AsyncFarlProtocol | None = None,
     ) -> None:
         self.app = app
-        self.navio = navio
+        self.farl = farl
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        navio_state = (
-            NavioState(policy=[], state=[], violated=[])
-            if self.navio is None
-            else NavioState(navio=self.navio, policy=[], state=[], violated=[])
+        farl_state = (
+            FarlState(policy=[], state=[], violated=[])
+            if self.farl is None
+            else FarlState(farl=self.farl, policy=[], state=[], violated=[])
         )
-        scope.setdefault("state", {}).setdefault(STATE_KEY, navio_state)
+        scope.setdefault("state", {}).setdefault(STATE_KEY, farl_state)
 
         async def send_wrapper(message) -> None:
             if message["type"] == "http.response.start" and (
-                navio_state := scope.get("state", {}).get(STATE_KEY)
+                farl_state := scope.get("state", {}).get(STATE_KEY)
             ):
-                navio_state = cast(NavioState, navio_state)
+                farl_state = cast(FarlState, farl_state)
 
                 best_none = None
                 best = None
-                for i in navio_state["state"]:
+                for i in farl_state["state"]:
                     if i.reset_timestamp is None:
                         if (best_none is None) or (i.remaining < best_none.remaining):
                             best_none = i
@@ -52,8 +52,8 @@ class NavioMiddleware:
 
                 headers = MutableHeaders(scope=message)
 
-                if navio_state["policy"]:
-                    ratelimit_policy = ",".join(str(i) for i in navio_state["policy"])
+                if farl_state["policy"]:
+                    ratelimit_policy = ",".join(str(i) for i in farl_state["policy"])
                     headers.setdefault(HEADER_RATELIMIT_POLICY, ratelimit_policy)
 
                 if best or best_none:

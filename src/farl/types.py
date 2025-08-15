@@ -3,22 +3,25 @@ from typing import Protocol, TypeVar
 
 import limits
 import limits.aio
+from fastapi import Request
 from limits import RateLimitItem
 from pydantic import networks
 
-from navio.utils import RateLimitDictValue, RateLimitTimeArg
+from farl.utils import RateLimitDictValue, RateLimitTimeArg
 
 
 Key = str
 KeyResult = Key | Sequence[Key]
 GetKeyDependency = Callable[..., KeyResult | Awaitable[KeyResult]]
+GetRequestKey = Callable[[Request], KeyResult | Awaitable[KeyResult]]
 
 
 CostResult = int
 GetCostDependency = Callable[..., CostResult | Awaitable[CostResult]]
+GetRequestCost = Callable[[Request], CostResult | Awaitable[CostResult]]
 
 
-RateLimitArgument = (
+RateLimitPolicy = (
     str
     | RateLimitItem
     | Sequence[RateLimitItem]
@@ -27,9 +30,13 @@ RateLimitArgument = (
     | RateLimitDictValue
     | Sequence[RateLimitDictValue]
 )
-GetRateLimitArgumentDependency = Callable[
+GetRateLimitPolicyDependency = Callable[
     ...,
-    RateLimitArgument | Awaitable[RateLimitArgument],
+    RateLimitPolicy | Awaitable[RateLimitPolicy],
+]
+GetRequestRateLimitPolicy = Callable[
+    [Request],
+    RateLimitPolicy | Awaitable[RateLimitPolicy],
 ]
 
 
@@ -51,11 +58,14 @@ class RedisDsn(networks.RedisDsn):
 _T = TypeVar("_T")
 
 
-class _NavioProtocol(Protocol[_T]):
+class _FarlProtocol(Protocol[_T]):
     limiter: _T
     namespace: str | None
+    key: KeyResult | GetRequestKey | None
+    cost: CostResult | GetRequestCost | None
+    policy: RateLimitPolicy | GetRequestRateLimitPolicy | None
 
 
-NavioProtocol = _NavioProtocol[limits.strategies.RateLimiter]
-AsyncNavioProtocol = _NavioProtocol[limits.aio.strategies.RateLimiter]
-AnyNavioProtocol = NavioProtocol | AsyncNavioProtocol
+FarlProtocol = _FarlProtocol[limits.strategies.RateLimiter]
+AsyncFarlProtocol = _FarlProtocol[limits.aio.strategies.RateLimiter]
+AnyFarlProtocol = FarlProtocol | AsyncFarlProtocol

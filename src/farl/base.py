@@ -4,7 +4,16 @@ import limits
 import limits.aio
 from pydantic import RedisDsn
 
-from navio.types import AsyncNavioProtocol, NavioProtocol
+from farl.types import (
+    AsyncFarlProtocol,
+    CostResult,
+    FarlProtocol,
+    GetRequestCost,
+    GetRequestKey,
+    GetRequestRateLimitPolicy,
+    KeyResult,
+    RateLimitPolicy,
+)
 
 
 try:
@@ -15,7 +24,7 @@ except ImportError:
     AsyncRedisConnectionPool = None
 
 
-class Navio(NavioProtocol):
+class Farl(FarlProtocol):
     @overload
     def __init__(
         self,
@@ -31,6 +40,9 @@ class Navio(NavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -45,6 +57,9 @@ class Navio(NavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -57,6 +72,9 @@ class Navio(NavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     def __init__(
@@ -75,7 +93,13 @@ class Navio(NavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None:
+        self.key = rate_limit_key
+        self.cost = rate_limit_cost
+        self.policy = rate_limit_policy
         storage_options = {**(storage_options or {})}
         if redis_uri:
             storage_options.update(
@@ -117,7 +141,7 @@ class Navio(NavioProtocol):
         self.namespace = namespace
 
 
-class AsyncNavio(AsyncNavioProtocol):
+class AsyncFarl(AsyncFarlProtocol):
     @overload
     def __init__(
         self,
@@ -133,6 +157,9 @@ class AsyncNavio(AsyncNavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -147,6 +174,9 @@ class AsyncNavio(AsyncNavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -159,6 +189,9 @@ class AsyncNavio(AsyncNavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     def __init__(
@@ -177,7 +210,13 @@ class AsyncNavio(AsyncNavioProtocol):
             "sliding-window-counter",
         ] = "fixed-window",
         namespace: str | None = None,
+        rate_limit_key: KeyResult | GetRequestKey | None = None,
+        rate_limit_cost: CostResult | GetRequestCost | None = None,
+        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None:
+        self.key = rate_limit_key
+        self.cost = rate_limit_cost
+        self.policy = rate_limit_policy
         storage_options = {**(storage_options or {})}
         if redis_uri:
             storage_options.update(

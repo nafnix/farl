@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from navio.exceptions import (
+from farl.exceptions import (
     AbnormalUsageDetected,
-    NavioError,
+    FarlError,
     QuotaExceeded,
     TemporaryReducedCapacity,
-    navio_exceptions_handler,
+    farl_exceptions_handler,
 )
 
 
@@ -41,7 +41,7 @@ def temporary_reduced_capacity():
     raise temporary_reduced_capacity_exc
 
 
-app.add_exception_handler(NavioError, navio_exceptions_handler)
+app.add_exception_handler(FarlError, farl_exceptions_handler)
 
 
 def test_exceptions():
