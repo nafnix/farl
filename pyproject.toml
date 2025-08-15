@@ -1,6 +1,6 @@
 [project]
 name = "farl"
-version = "0.0.6"
+version = "0.0.7"
 description = "A FastAPI rate limiting library."
 readme = "README.md"
 authors = [
