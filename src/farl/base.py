@@ -4,16 +4,7 @@ import limits
 import limits.aio
 from pydantic import RedisDsn
 
-from farl.types import (
-    AsyncFarlProtocol,
-    CostResult,
-    FarlProtocol,
-    GetRequestCost,
-    GetRequestKey,
-    GetRequestRateLimitPolicy,
-    KeyResult,
-    RateLimitPolicy,
-)
+from farl.types import AsyncFarlProtocol, FarlProtocol
 
 
 try:
@@ -31,7 +22,7 @@ class Farl(FarlProtocol):
         *,
         redis_uri: str | RedisDsn | None,
         redis_connection_pool: "RedisConnectionPool | None" = None,  # pyright: ignore [reportInvalidTypeForm]
-        redis_key_prefix: str = limits.storage.RedisStorage.PREFIX,
+        redis_key_prefix: str = "farl",
         redis_wrap_exceptions: bool = False,
         redis_options: dict | None = None,
         strategy: Literal[
@@ -39,10 +30,6 @@ class Farl(FarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -56,10 +43,6 @@ class Farl(FarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -71,10 +54,6 @@ class Farl(FarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     def __init__(
@@ -82,7 +61,7 @@ class Farl(FarlProtocol):
         *,
         redis_uri: str | RedisDsn | None = None,
         redis_connection_pool: "RedisConnectionPool | None" = None,  # pyright: ignore [reportInvalidTypeForm]
-        redis_key_prefix: str = limits.storage.RedisStorage.PREFIX,
+        redis_key_prefix: str = "farl",
         redis_wrap_exceptions: bool = False,
         redis_options: dict | None = None,
         storage_uri: str | RedisDsn | None = None,
@@ -92,14 +71,7 @@ class Farl(FarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None:
-        self.key = rate_limit_key
-        self.cost = rate_limit_cost
-        self.policy = rate_limit_policy
         storage_options = {**(storage_options or {})}
         if redis_uri:
             storage_options.update(
@@ -138,7 +110,6 @@ class Farl(FarlProtocol):
                 "Available options are: 'fixed-window', 'moving-window', "
                 "'sliding-window-counter'."
             )
-        self.namespace = namespace
 
 
 class AsyncFarl(AsyncFarlProtocol):
@@ -156,10 +127,6 @@ class AsyncFarl(AsyncFarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -173,10 +140,6 @@ class AsyncFarl(AsyncFarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     @overload
@@ -188,10 +151,6 @@ class AsyncFarl(AsyncFarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None: ...
 
     def __init__(
@@ -209,14 +168,7 @@ class AsyncFarl(AsyncFarlProtocol):
             "moving-window",
             "sliding-window-counter",
         ] = "fixed-window",
-        namespace: str | None = None,
-        rate_limit_key: KeyResult | GetRequestKey | None = None,
-        rate_limit_cost: CostResult | GetRequestCost | None = None,
-        rate_limit_policy: RateLimitPolicy | GetRequestRateLimitPolicy | None = None,
     ) -> None:
-        self.key = rate_limit_key
-        self.cost = rate_limit_cost
-        self.policy = rate_limit_policy
         storage_options = {**(storage_options or {})}
         if redis_uri:
             storage_options.update(
@@ -262,7 +214,6 @@ class AsyncFarl(AsyncFarlProtocol):
             )
 
         self.limiter = limiter_class(cast(limits.aio.storage.Storage, storage))
-        self.namespace = namespace
 
     @staticmethod
     def _to_async_storage_uri(uri: str):

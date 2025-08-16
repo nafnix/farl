@@ -1,0 +1,492 @@
+import inspect
+import logging
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from typing import Generic, TypeVar
+
+from fastapi import Depends, Request
+from limits.limits import (
+    RateLimitItem,
+    RateLimitItemPerDay,
+    RateLimitItemPerHour,
+    RateLimitItemPerMinute,
+    RateLimitItemPerMonth,
+    RateLimitItemPerSecond,
+    RateLimitItemPerYear,
+)
+
+from farl.constants import STATE_KEY
+from farl.exceptions import FarlError, QuotaExceeded
+from farl.types import (
+    AnyFarlProtocol,
+    Cost,
+    FarlState,
+    GetCostDependency,
+    GetKeyDependency,
+    GetPartitionCostMappingDependency,
+    GetPeriodDependency,
+    GetPolicyNameDependency,
+    GetQuotaDependency,
+    GetQuotaUnitDependency,
+    GetTimeTypeDependency,
+    HeaderRateLimit,
+    HeaderRateLimitPolicy,
+    Key,
+    PartitionCostMapping,
+    Period,
+    PolicyName,
+    Quota,
+    QuotaUnit,
+    TimeType,
+)
+
+
+_T = TypeVar("_T")
+
+logger = logging.getLogger("farl")
+
+
+class AbstractPolicyHandler(ABC, Generic[_T]):
+    def __init__(
+        self,
+        request: Request,
+        name: str | None,
+        quota: Quota,
+        quota_unit: str | None,
+        time: TimeType,
+        period: int,
+        cost: Cost,
+        partition: Key | None,
+        namespace: Key,
+        state: FarlState,
+        farl: AnyFarlProtocol,
+        error_class: type[FarlError] | None,
+    ):
+        self.request = request
+        self.quota = quota
+        self.time: TimeType = time
+        self.period = period
+        self.name = name
+        self.quota_unit = quota_unit
+        self.namespace = namespace
+        self.partition = partition
+        self.cost = cost
+        self.state = state
+        self.farl = farl
+        self.error_class = error_class
+
+    def get_limit_value(self) -> RateLimitItem:
+        time = self.time
+        amount = self.quota
+        multiples = self.period
+        namespace = self.namespace
+
+        if time in {"year", "Y"}:
+            result = RateLimitItemPerYear(amount, multiples, namespace=namespace)
+        elif time in {"month", "M"}:
+            result = RateLimitItemPerMonth(amount, multiples, namespace=namespace)
+        elif time in {"day", "D"}:
+            result = RateLimitItemPerDay(amount, multiples, namespace=namespace)
+        elif time in {"hour", "h"}:
+            result = RateLimitItemPerHour(amount, multiples, namespace=namespace)
+        elif time in {"minute", "m"}:
+            result = RateLimitItemPerMinute(amount, multiples, namespace=namespace)
+        elif time in {"second", "s"}:
+            result = RateLimitItemPerSecond(amount, multiples, namespace=namespace)
+        else:
+            raise ValueError(f"Unsupported time type: {time}")
+
+        return result
+
+    @abstractmethod
+    def __call__(self) -> _T: ...
+
+
+class PolicyHandler(AbstractPolicyHandler[bool]):
+    @staticmethod
+    def _get_policy_name(value: RateLimitItem):
+        items = ["pre", value.GRANULARITY.name]
+        if value.multiples != 1:
+            items.insert(1, str(value.multiples))
+
+        return "".join(items)
+
+    async def __call__(self):
+        value = self.get_limit_value()
+        name = self.name if self.name is not None else self._get_policy_name(value)
+        limiter = self.farl.limiter
+        self.state["policy"].append(
+            HeaderRateLimitPolicy(
+                name,
+                self.quota,
+                self.quota_unit,
+                self.period * value.GRANULARITY.seconds,
+                value.namespace,
+            )
+        )
+        keys = []
+        if self.partition is not None:
+            keys.append(self.partition)
+
+        hit_result = limiter.hit(value, *keys, cost=self.cost)
+        if inspect.isawaitable(hit_result):
+            hit_result = await hit_result
+
+        stats_result = limiter.get_window_stats(value, *keys)
+        if inspect.isawaitable(stats_result):
+            stats_result = await stats_result
+
+        ratelimit = HeaderRateLimit(
+            name,
+            stats_result.remaining,
+            stats_result.reset_time,
+            self.partition,
+        )
+        self.state["state"].append(ratelimit)
+
+        if hit_result is False:
+            self.state["violated"].append(ratelimit)
+
+            if self.error_class is not None:
+                logger.warning(
+                    ("Rate limit exceeded - policy: %s"),
+                    name,
+                    extra={
+                        "policy": name,
+                        "quota": self.quota,
+                        "cost": self.cost,
+                        "namespace": self.namespace,
+                        "partition": self.partition,
+                        "time_unit": value.GRANULARITY.name,
+                        "period": self.period,
+                    },
+                )
+                raise self.error_class(
+                    violated_policies=[i.policy for i in self.state["violated"]]
+                )
+        return hit_result
+
+
+class AbstractMultiPartitionPolicyHandler(ABC, Generic[_T]):
+    def __init__(
+        self,
+        request: Request,
+        name: str | None,
+        quota: Quota,
+        quota_unit: str | None,
+        time: TimeType,
+        period: int,
+        partition_costs: PartitionCostMapping,
+        namespace: Key,
+        state: FarlState,
+        farl: AnyFarlProtocol,
+        error_class: type[FarlError] | None,
+    ):
+        self.request = request
+        self.quota = quota
+        self.time: TimeType = time
+        self.period = period
+        self.name = name
+        self.quota_unit = quota_unit
+        self.namespace = namespace
+        self.partition_costs = partition_costs
+        self.state = state
+        self.farl = farl
+        self.error_class = error_class
+
+    def get_limit_value(self) -> RateLimitItem:
+        time = self.time
+        amount = self.quota
+        multiples = self.period
+        namespace = self.namespace
+
+        if time in {"year", "Y"}:
+            result = RateLimitItemPerYear(amount, multiples, namespace=namespace)
+        elif time in {"month", "M"}:
+            result = RateLimitItemPerMonth(amount, multiples, namespace=namespace)
+        elif time in {"day", "D"}:
+            result = RateLimitItemPerDay(amount, multiples, namespace=namespace)
+        elif time in {"hour", "h"}:
+            result = RateLimitItemPerHour(amount, multiples, namespace=namespace)
+        elif time in {"minute", "m"}:
+            result = RateLimitItemPerMinute(amount, multiples, namespace=namespace)
+        elif time in {"second", "s"}:
+            result = RateLimitItemPerSecond(amount, multiples, namespace=namespace)
+        else:
+            raise ValueError(f"Unsupported time type: {time}")
+
+        return result
+
+    @abstractmethod
+    def __call__(self) -> _T: ...
+
+
+class MultiPartitionPolicyHandler(AbstractMultiPartitionPolicyHandler[bool]):
+    @staticmethod
+    def _get_policy_name(value: RateLimitItem):
+        items = ["multi", value.GRANULARITY.name]
+        if value.multiples != 1:
+            items.insert(1, str(value.multiples))
+
+        return "".join(items)
+
+    async def __call__(self):
+        value = self.get_limit_value()
+        base_name = self.name if self.name is not None else self._get_policy_name(value)
+        limiter = self.farl.limiter
+
+        for partition_key in self.partition_costs:
+            policy_name = f"{base_name}_{partition_key}"
+            self.state["policy"].append(
+                HeaderRateLimitPolicy(
+                    policy_name,
+                    self.quota,
+                    self.quota_unit,
+                    self.period * value.GRANULARITY.seconds,
+                    value.namespace,
+                )
+            )
+
+        violated_partitions = []
+        for partition_key, cost in self.partition_costs.items():
+            hit_result = limiter.hit(value, partition_key, cost=cost)
+            if inspect.isawaitable(hit_result):
+                hit_result = await hit_result
+
+            stats_result = limiter.get_window_stats(value, partition_key)
+            if inspect.isawaitable(stats_result):
+                stats_result = await stats_result
+
+            policy_name = f"{base_name}_{partition_key}"
+            ratelimit = HeaderRateLimit(
+                policy_name,
+                stats_result.remaining,
+                stats_result.reset_time,
+                partition_key,
+            )
+            self.state["state"].append(ratelimit)
+
+            if hit_result is False:
+                violated_partitions.append(partition_key)
+                self.state["violated"].append(ratelimit)
+
+        # 如果有任何分区违反限制，记录并抛出异常
+        if violated_partitions and self.error_class is not None:
+            logger.warning(
+                "Rate limit exceeded - partitions: %s",
+                ", ".join(violated_partitions),
+                extra={
+                    "base_policy": base_name,
+                    "quota": self.quota,
+                    "partition_costs": self.partition_costs,
+                    "violated_partitions": violated_partitions,
+                    "namespace": self.namespace,
+                    "time_unit": value.GRANULARITY.name,
+                    "period": self.period,
+                },
+            )
+            raise self.error_class(
+                violated_policies=[i.policy for i in self.state["violated"]]
+            )
+
+        return not violated_partitions
+
+
+class RateLimitPolicyRegistry:
+    def __init__(
+        self,
+        error_class: type[FarlError] | None = QuotaExceeded,
+        farl: AnyFarlProtocol | None = None,
+    ) -> None:
+        self.error_class = error_class
+        self.farl = farl
+        self.dependencies: list[Callable[[bool], Callable]] = []
+
+    @staticmethod
+    def _get_value(value):
+        def _():
+            return value
+
+        return _
+
+    def _get_farl_state(self, request: Request):
+        state = request.scope.setdefault("state", {})
+        farl_state: FarlState = state.setdefault(
+            STATE_KEY,
+            FarlState(policy=[], state=[], violated=[]),
+        )
+        farl: AnyFarlProtocol | None = self.farl or farl_state.get("farl")
+        if farl is None:
+            raise ValueError("farl instance is required")
+        return farl, farl_state
+
+    def create(
+        self,
+        quota: Quota | GetQuotaDependency,
+        *,
+        time: TimeType | GetTimeTypeDependency = "minute",
+        period: Period | GetPeriodDependency = 1,
+        quota_unit: QuotaUnit | GetQuotaUnitDependency | None = None,
+        cost: Cost | GetCostDependency = 1,
+        name: PolicyName | GetPolicyNameDependency | None = None,
+        namespace: Key | GetKeyDependency = "default",
+        partition: Key | GetKeyDependency | None = None,
+        handler: type[AbstractPolicyHandler] = PolicyHandler,
+    ):
+        name = name if callable(name) else self._get_value(name)
+        quota = quota if callable(quota) else self._get_value(quota)
+        quota_unit = quota_unit if callable(quota_unit) else self._get_value(quota_unit)
+        time = time if callable(time) else self._get_value(time)
+        period = period if callable(period) else self._get_value(period)
+        cost = cost if callable(cost) else self._get_value(cost)
+        namespace = namespace if callable(namespace) else self._get_value(namespace)
+        partition = partition if callable(partition) else self._get_value(partition)
+
+        def wrapper(auto_error: bool):  # noqa: FBT001
+            async def dependency(
+                request: Request,
+                name_=Depends(name),
+                quota_=Depends(quota),
+                quota_unit_=Depends(quota_unit),
+                time_=Depends(time),
+                period_=Depends(period),
+                cost_=Depends(cost),
+                namespace_=Depends(namespace),
+                partition_=Depends(partition),
+            ):
+                farl, state = self._get_farl_state(request)
+                call = handler(
+                    request,
+                    name=name_,
+                    quota=quota_,
+                    quota_unit=quota_unit_,
+                    time=time_,
+                    period=period_,
+                    cost=cost_,
+                    namespace=namespace_,
+                    partition=partition_,
+                    state=state,
+                    farl=farl,
+                    error_class=self.error_class if auto_error else None,
+                )
+
+                result = call()
+                if inspect.isawaitable(result):
+                    result = await result
+
+                return result
+
+            return dependency
+
+        self.dependencies.append(wrapper)
+        return wrapper(auto_error=True)
+
+    def create_multi_partition(
+        self,
+        quota: Quota | GetQuotaDependency,
+        *,
+        partition_costs: PartitionCostMapping | GetPartitionCostMappingDependency,
+        time: TimeType | GetTimeTypeDependency = "minute",
+        period: Period | GetPeriodDependency = 1,
+        quota_unit: QuotaUnit | GetQuotaUnitDependency | None = None,
+        name: PolicyName | GetPolicyNameDependency | None = None,
+        namespace: Key | GetKeyDependency = "default",
+        handler: type[
+            AbstractMultiPartitionPolicyHandler
+        ] = MultiPartitionPolicyHandler,
+    ):
+        name = name if callable(name) else self._get_value(name)
+        quota = quota if callable(quota) else self._get_value(quota)
+        quota_unit = quota_unit if callable(quota_unit) else self._get_value(quota_unit)
+        time = time if callable(time) else self._get_value(time)
+        period = period if callable(period) else self._get_value(period)
+        partition_costs = (
+            partition_costs
+            if callable(partition_costs)
+            else self._get_value(partition_costs)
+        )
+        namespace = namespace if callable(namespace) else self._get_value(namespace)
+
+        def wrapper(auto_error: bool):  # noqa: FBT001
+            async def dependency(
+                request: Request,
+                name_=Depends(name),
+                quota_=Depends(quota),
+                quota_unit_=Depends(quota_unit),
+                time_=Depends(time),
+                period_=Depends(period),
+                partition_costs_=Depends(partition_costs),
+                namespace_=Depends(namespace),
+            ):
+                state = request.scope.setdefault("state", {})
+                farl_state: FarlState = state.setdefault(
+                    STATE_KEY,
+                    FarlState(policy=[], state=[], violated=[]),
+                )
+                farl: AnyFarlProtocol | None = self.farl or farl_state.get("farl")
+                if farl is None:
+                    raise ValueError("farl instance is required")
+
+                call = handler(
+                    request,
+                    name=name_,
+                    quota=quota_,
+                    quota_unit=quota_unit_,
+                    time=time_,
+                    period=period_,
+                    namespace=namespace_,
+                    state=farl_state,
+                    farl=farl,
+                    error_class=self.error_class if auto_error else None,
+                    partition_costs=partition_costs_,
+                )
+                result = call()
+                if inspect.isawaitable(result):
+                    result = await result
+
+                return result
+
+            return dependency
+
+        self.dependencies.append(wrapper)
+        return wrapper(auto_error=True)
+
+
+def combine_rate_limit_policies(
+    *args: RateLimitPolicyRegistry,
+    error_class: type[FarlError] | None = QuotaExceeded,
+):
+    deps = []
+    for i in args:
+        deps.extend(ii(False) for ii in i.dependencies)  # noqa: FBT003
+
+    def dependency(request: Request, **_kwds):
+        state = request.scope.setdefault("state", {})
+        farl_state: FarlState = state.setdefault(
+            STATE_KEY,
+            FarlState(policy=[], state=[], violated=[]),
+        )
+        if error_class is not None and farl_state["violated"]:
+            violated_policies = [v.policy for v in farl_state["violated"]]
+            logger.warning(
+                "Multiple rate limits violated - policies: %s",
+                ", ".join(violated_policies),
+                extra={"violated": farl_state["violated"]},
+            )
+            raise error_class(violated_policies=violated_policies)
+
+    sign = inspect.signature(dependency)
+    param_mapping = sign.parameters.copy()
+    param_mapping.pop("_kwds")
+    params = list(param_mapping.values())
+    params.extend(
+        inspect.Parameter(
+            name=f"_ratelimit_{index}",
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            default=Depends(i),
+        )
+        for index, i in enumerate(deps)
+    )
+    new_sign = sign.replace(parameters=params)
+    setattr(dependency, "__signature__", new_sign)  # noqa: B010
+    return dependency
