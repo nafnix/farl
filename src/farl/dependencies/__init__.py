@@ -1,9 +1,9 @@
-from .limits import RateLimitPolicyRegistry, combine_rate_limit_policies
+from .limits import RateLimitPolicyManager, combine_rate_limit_policies
 from .utils import request_endpoint
 
 
 __all__ = [
-    "RateLimitPolicyRegistry",
+    "RateLimitPolicyManager",
     "combine_rate_limit_policies",
     "request_endpoint",
 ]

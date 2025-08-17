@@ -292,7 +292,7 @@ class MultiPartitionPolicyHandler(AbstractMultiPartitionPolicyHandler[bool]):
         return not violated_partitions
 
 
-class RateLimitPolicyRegistry:
+class RateLimitPolicyManager:
     def __init__(
         self,
         error_class: type[FarlError] | None = QuotaExceeded,
@@ -300,7 +300,7 @@ class RateLimitPolicyRegistry:
     ) -> None:
         self.error_class = error_class
         self.farl = farl
-        self.dependencies: list[Callable[[bool], Callable]] = []
+        self._dependencies: list[Callable[[bool], Callable]] = []
 
     @staticmethod
     def _get_value(value):
@@ -378,7 +378,7 @@ class RateLimitPolicyRegistry:
 
             return dependency
 
-        self.dependencies.append(wrapper)
+        self._dependencies.append(wrapper)
         return wrapper(auto_error=True)
 
     def create_multi_partition(
@@ -448,45 +448,39 @@ class RateLimitPolicyRegistry:
 
             return dependency
 
-        self.dependencies.append(wrapper)
+        self._dependencies.append(wrapper)
         return wrapper(auto_error=True)
 
+    def __call__(self):
+        deps = [ii(False) for ii in self._dependencies]  # noqa: FBT003
 
-def combine_rate_limit_policies(
-    *args: RateLimitPolicyRegistry,
-    error_class: type[FarlError] | None = QuotaExceeded,
-):
-    deps = []
-    for i in args:
-        deps.extend(ii(False) for ii in i.dependencies)  # noqa: FBT003
-
-    def dependency(request: Request, **_kwds):
-        state = request.scope.setdefault("state", {})
-        farl_state: FarlState = state.setdefault(
-            STATE_KEY,
-            FarlState(policy=[], state=[], violated=[]),
-        )
-        if error_class is not None and farl_state["violated"]:
-            violated_policies = [v.policy for v in farl_state["violated"]]
-            logger.warning(
-                "Multiple rate limits violated - policies: %s",
-                ", ".join(violated_policies),
-                extra={"violated": farl_state["violated"]},
+        def dependency(request: Request, **_kwds):
+            state = request.scope.setdefault("state", {})
+            farl_state: FarlState = state.setdefault(
+                STATE_KEY,
+                FarlState(policy=[], state=[], violated=[]),
             )
-            raise error_class(violated_policies=violated_policies)
+            if self.error_class is not None and farl_state["violated"]:
+                violated_policies = [v.policy for v in farl_state["violated"]]
+                logger.warning(
+                    "Multiple rate limits violated - policies: %s",
+                    ", ".join(violated_policies),
+                    extra={"violated": farl_state["violated"]},
+                )
+                raise self.error_class(violated_policies=violated_policies)
 
-    sign = inspect.signature(dependency)
-    param_mapping = sign.parameters.copy()
-    param_mapping.pop("_kwds")
-    params = list(param_mapping.values())
-    params.extend(
-        inspect.Parameter(
-            name=f"_ratelimit_{index}",
-            kind=inspect.Parameter.KEYWORD_ONLY,
-            default=Depends(i),
+        sign = inspect.signature(dependency)
+        param_mapping = sign.parameters.copy()
+        param_mapping.pop("_kwds")
+        params = list(param_mapping.values())
+        params.extend(
+            inspect.Parameter(
+                name=f"_ratelimit_{index}",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=Depends(i),
+            )
+            for index, i in enumerate(deps)
         )
-        for index, i in enumerate(deps)
-    )
-    new_sign = sign.replace(parameters=params)
-    setattr(dependency, "__signature__", new_sign)  # noqa: B010
-    return dependency
+        new_sign = sign.replace(parameters=params)
+        setattr(dependency, "__signature__", new_sign)  # noqa: B010
+        return dependency
