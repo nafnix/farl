@@ -1,8 +1,9 @@
+import asyncio
 import inspect
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Generic, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Generic, TypeVar, overload
 
 from fastapi import Depends, Request
 from limits.limits import (
@@ -16,6 +17,7 @@ from limits.limits import (
 )
 
 from farl.constants import STATE_KEY
+from farl.decorators import rate_limit
 from farl.exceptions import FarlError, QuotaExceeded
 from farl.types import (
     AnyFarlProtocol,
@@ -26,6 +28,7 @@ from farl.types import (
     GetPartitionCostMappingDependency,
     GetPeriodDependency,
     GetPolicyNameDependency,
+    GetPolicySettingsDependency,
     GetQuotaDependency,
     GetQuotaUnitDependency,
     GetTimeTypeDependency,
@@ -35,6 +38,7 @@ from farl.types import (
     PartitionCostMapping,
     Period,
     PolicyName,
+    PolicySettings,
     Quota,
     QuotaUnit,
     TimeType,
@@ -151,15 +155,7 @@ class PolicyHandler(AbstractPolicyHandler[bool]):
                 logger.warning(
                     ("Rate limit exceeded - policy: %s"),
                     name,
-                    extra={
-                        "policy": name,
-                        "quota": self.quota,
-                        "cost": self.cost,
-                        "namespace": self.namespace,
-                        "partition": self.partition,
-                        "time_unit": value.GRANULARITY.name,
-                        "period": self.period,
-                    },
+                    extra={"violated": self.state["violated"]},
                 )
                 raise self.error_class(
                     violated_policies=[i.policy for i in self.state["violated"]]
@@ -232,23 +228,23 @@ class MultiPartitionPolicyHandler(AbstractMultiPartitionPolicyHandler[bool]):
 
     async def __call__(self):
         value = self.get_limit_value()
-        base_name = self.name if self.name is not None else self._get_policy_name(value)
+        name = self.name if self.name is not None else self._get_policy_name(value)
         limiter = self.farl.limiter
 
         for partition_key in self.partition_costs:
-            policy_name = f"{base_name}_{partition_key}"
             self.state["policy"].append(
                 HeaderRateLimitPolicy(
-                    policy_name,
+                    name,
                     self.quota,
                     self.quota_unit,
                     self.period * value.GRANULARITY.seconds,
-                    value.namespace,
+                    partition_key,
                 )
             )
 
         violated_partitions = []
         for partition_key, cost in self.partition_costs.items():
+            cost = DEFAULT_COST if cost is None else cost
             hit_result = limiter.hit(value, partition_key, cost=cost)
             if inspect.isawaitable(hit_result):
                 hit_result = await hit_result
@@ -257,9 +253,8 @@ class MultiPartitionPolicyHandler(AbstractMultiPartitionPolicyHandler[bool]):
             if inspect.isawaitable(stats_result):
                 stats_result = await stats_result
 
-            policy_name = f"{base_name}_{partition_key}"
             ratelimit = HeaderRateLimit(
-                policy_name,
+                name,
                 stats_result.remaining,
                 stats_result.reset_time,
                 partition_key,
@@ -273,23 +268,84 @@ class MultiPartitionPolicyHandler(AbstractMultiPartitionPolicyHandler[bool]):
         # 如果有任何分区违反限制，记录并抛出异常
         if violated_partitions and self.error_class is not None:
             logger.warning(
-                "Rate limit exceeded - partitions: %s",
-                ", ".join(violated_partitions),
-                extra={
-                    "base_policy": base_name,
-                    "quota": self.quota,
-                    "partition_costs": self.partition_costs,
-                    "violated_partitions": violated_partitions,
-                    "namespace": self.namespace,
-                    "time_unit": value.GRANULARITY.name,
-                    "period": self.period,
-                },
+                "Rate limit exceeded - policy: %s",
+                name,
+                extra={"violated": self.state["violated"]},
             )
             raise self.error_class(
                 violated_policies=[i.policy for i in self.state["violated"]]
             )
 
         return not violated_partitions
+
+
+class AbstractPolicySettingsHandler(ABC, Generic[_T]):
+    def __init__(
+        self,
+        request: Request,
+        settings: PolicySettings | Sequence[PolicySettings],
+        state: FarlState,
+        farl: AnyFarlProtocol,
+        error_class: type[FarlError] | None,
+    ):
+        self.request = request
+        self.settings = settings
+        self.state = state
+        self.farl = farl
+        self.error_class = error_class
+
+    @abstractmethod
+    def __call__(self) -> _T: ...
+
+
+class PolicySettingsHandler(AbstractPolicySettingsHandler[bool]):
+    async def __call__(self) -> bool:
+        items = (
+            self.settings
+            if isinstance(
+                self.settings,
+                Sequence,
+            )
+            else [self.settings]
+        )
+
+        handles = [
+            PolicyHandler(
+                self.request,
+                name=settings.get("name"),
+                quota=settings.get("quota"),
+                quota_unit=settings.get("quota_unit"),
+                time=settings.get("time", "minute"),
+                period=settings.get("period", DEFAULT_PERIOD),
+                cost=settings.get("cost", DEFAULT_COST),
+                partition=settings.get("partition"),
+                state=self.state,
+                namespace=settings.get("namespace", DEFAULT_NAMESPACE),
+                farl=self.farl,
+                error_class=None,
+            )
+            for settings in items
+        ]
+
+        result = all(await asyncio.gather(*[h() for h in handles]))
+        if self.state["violated"] and self.error_class is not None:
+            logger.warning(
+                "Rate limit exceeded - policies: %s",
+                ", ".join(i.policy for i in self.state["violated"]),
+                extra={"violated": self.state["violated"]},
+            )
+            raise self.error_class(
+                violated_policies=[i.policy for i in self.state["violated"]]
+            )
+        return result
+
+
+_Function = TypeVar("_Function", bound=Callable)
+
+DEFAULT_NAMESPACE = "default"
+DEFAULT_TIME = "minute"
+DEFAULT_PERIOD = 1
+DEFAULT_COST = 1
 
 
 class RateLimitPolicyManager:
@@ -324,12 +380,12 @@ class RateLimitPolicyManager:
         self,
         quota: Quota | GetQuotaDependency,
         *,
-        time: TimeType | GetTimeTypeDependency = "minute",
-        period: Period | GetPeriodDependency = 1,
+        time: TimeType | GetTimeTypeDependency = DEFAULT_TIME,
+        period: Period | GetPeriodDependency = DEFAULT_PERIOD,
         quota_unit: QuotaUnit | GetQuotaUnitDependency | None = None,
-        cost: Cost | GetCostDependency = 1,
+        cost: Cost | GetCostDependency = DEFAULT_COST,
         name: PolicyName | GetPolicyNameDependency | None = None,
-        namespace: Key | GetKeyDependency = "default",
+        namespace: Key | GetKeyDependency = DEFAULT_NAMESPACE,
         partition: Key | GetKeyDependency | None = None,
         handler: type[AbstractPolicyHandler] = PolicyHandler,
     ):
@@ -385,12 +441,12 @@ class RateLimitPolicyManager:
         self,
         quota: Quota | GetQuotaDependency,
         *,
-        partition_costs: PartitionCostMapping | GetPartitionCostMappingDependency,
-        time: TimeType | GetTimeTypeDependency = "minute",
-        period: Period | GetPeriodDependency = 1,
+        time: TimeType | GetTimeTypeDependency = DEFAULT_TIME,
+        period: Period | GetPeriodDependency = DEFAULT_PERIOD,
         quota_unit: QuotaUnit | GetQuotaUnitDependency | None = None,
+        partition_costs: PartitionCostMapping | GetPartitionCostMappingDependency,
         name: PolicyName | GetPolicyNameDependency | None = None,
-        namespace: Key | GetKeyDependency = "default",
+        namespace: Key | GetKeyDependency = DEFAULT_NAMESPACE,
         handler: type[
             AbstractMultiPartitionPolicyHandler
         ] = MultiPartitionPolicyHandler,
@@ -418,14 +474,7 @@ class RateLimitPolicyManager:
                 partition_costs_=Depends(partition_costs),
                 namespace_=Depends(namespace),
             ):
-                state = request.scope.setdefault("state", {})
-                farl_state: FarlState = state.setdefault(
-                    STATE_KEY,
-                    FarlState(policy=[], state=[], violated=[]),
-                )
-                farl: AnyFarlProtocol | None = self.farl or farl_state.get("farl")
-                if farl is None:
-                    raise ValueError("farl instance is required")
+                farl, state = self._get_farl_state(request)
 
                 call = handler(
                     request,
@@ -435,7 +484,7 @@ class RateLimitPolicyManager:
                     time=time_,
                     period=period_,
                     namespace=namespace_,
-                    state=farl_state,
+                    state=state,
                     farl=farl,
                     error_class=self.error_class if auto_error else None,
                     partition_costs=partition_costs_,
@@ -451,7 +500,45 @@ class RateLimitPolicyManager:
         self._dependencies.append(wrapper)
         return wrapper(auto_error=True)
 
-    def __call__(self):
+    def create_settings(
+        self,
+        settings: (
+            PolicySettings | Sequence[PolicySettings] | GetPolicySettingsDependency
+        ),
+        handler: type[AbstractPolicySettingsHandler] = PolicySettingsHandler,
+    ):
+        settings = settings if callable(settings) else self._get_value(settings)
+
+        def wrapper(auto_error: bool):  # noqa: FBT001
+            async def dependency(request: Request, settings=Depends(settings)):
+                farl, state = self._get_farl_state(request)
+                call = handler(
+                    request=request,
+                    settings=settings,
+                    state=state,
+                    farl=farl,
+                    error_class=self.error_class if auto_error else None,
+                )
+                result = call()
+                if inspect.isawaitable(result):
+                    result = await result
+
+                return result
+
+            return dependency
+
+        self._dependencies.append(wrapper)
+        return wrapper(auto_error=True)
+
+    @overload
+    def __call__(self) -> Callable: ...
+    @overload
+    def __call__(self, fn: _Function) -> _Function: ...
+
+    def __call__(self, fn: _Function | None = None) -> _Function | Callable:
+        if fn is not None:
+            return rate_limit(self)(fn)
+
         deps = [ii(False) for ii in self._dependencies]  # noqa: FBT003
 
         def dependency(request: Request, **_kwds):

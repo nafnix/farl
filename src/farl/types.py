@@ -1,8 +1,16 @@
 import base64
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from math import ceil
-from typing import Literal, NamedTuple, NotRequired, Protocol, TypeVar, TypedDict
+from typing import (
+    Literal,
+    NamedTuple,
+    NotRequired,
+    Protocol,
+    Required,
+    TypeVar,
+    TypedDict,
+)
 
 import limits
 import limits.aio
@@ -100,7 +108,7 @@ GetKeyDependency = Callable[..., _ResultT[Key]]
 Cost = int
 GetCostDependency = Callable[..., _ResultT[Cost]]
 
-PartitionCostMapping = dict[Key, Cost]
+PartitionCostMapping = dict[Key, Cost | None]
 GetPartitionCostMappingDependency = Callable[..., _ResultT[PartitionCostMapping]]
 
 
@@ -109,6 +117,20 @@ GetPolicyNameDependency = Callable[..., _ResultT[PolicyName | None]]
 
 QuotaUnit = str
 GetQuotaUnitDependency = Callable[..., _ResultT[QuotaUnit | None]]
+
+
+class PolicySettings(TypedDict):
+    name: NotRequired[PolicyName]
+    quota: Required[Quota]
+    time: NotRequired[TimeType]
+    period: NotRequired[int]
+    quota_unit: NotRequired[str]
+    partition: NotRequired[Key]
+    cost: NotRequired[Cost]
+    namespace: NotRequired[Key]
+
+
+GetPolicySettingsDependency = Callable[..., _ResultT[PolicySettings | Sequence]]
 
 
 class RedisDsn(networks.RedisDsn):

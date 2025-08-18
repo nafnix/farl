@@ -1,11 +1,13 @@
 import inspect
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from fastapi import Depends
 
-from .dependencies import RateLimitPolicyManager
+
+if TYPE_CHECKING:
+    from .manager import RateLimitPolicyManager
 
 
 Fn = TypeVar("Fn", bound=Callable)
@@ -37,7 +39,7 @@ def _create_call(fn: Fn) -> Fn:
     return hdlr  # pyright: ignore[reportReturnType]
 
 
-def rate_limit(manager: RateLimitPolicyManager):
+def rate_limit(manager: "RateLimitPolicyManager"):
     dep = manager()
 
     def decorate(fn: Fn) -> Fn:
