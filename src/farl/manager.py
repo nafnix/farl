@@ -239,7 +239,7 @@ class RateLimitPolicyManager:
     def __call__(self, fn: _Function) -> _Function: ...
 
     def __call__(self, fn: _Function | None = None) -> _Function | Callable:
-        if fn is not None:
+        if callable(fn):
             return rate_limit(self)(fn)
 
         deps = [ii(False) for ii in self._dependencies]  # noqa: FBT003

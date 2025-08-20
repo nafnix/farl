@@ -59,6 +59,7 @@ def rate_limit(manager: "RateLimitPolicyManager"):
             params.insert(-1, dep_param)
         else:
             params.append(dep_param)
+
         new_fn.__signature__ = sign.replace(parameters=params)
         return new_fn
 

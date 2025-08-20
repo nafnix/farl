@@ -1,7 +1,6 @@
 from .base import AsyncFarl, Farl
-from .decorators import rate_limit
-from .dependencies import RateLimitPolicyManager
 from .exceptions import FarlError, farl_exceptions_handler
+from .manager import RateLimitPolicyManager
 from .middleware import FarlMiddleware
 
 
@@ -12,5 +11,4 @@ __all__ = [
     "FarlMiddleware",
     "RateLimitPolicyManager",
     "farl_exceptions_handler",
-    "rate_limit",
 ]
