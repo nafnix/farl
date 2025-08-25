@@ -1,38 +1,3 @@
-# Farl
-
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://badge.fury.io/py/farl.svg)](https://badge.fury.io/py/farl)
-[![Code Coverage](https://codecov.io/gh/nafnix/farl/branch/master/graph/badge.svg)](https://codecov.io/gh/nafnix/farl)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-
-A powerful and flexible FastAPI rate limiting library that provides comprehensive rate limiting capabilities for your FastAPI applications.
-
-## Features
-
-- **Easy Integration**: Simple setup with FastAPI applications
-- **Flexible Configuration**: Support for various rate limiting strategies
-- **Multiple Backends**: In-memory and Redis backend support
-- **Comprehensive Protection**: Request rate limiting with customizable rules
-- **Monitoring**: Built-in metrics and logging capabilities
-- **Dependency Injection**: FastAPI-style dependency injection support
-
-## Installation
-
-```bash
-pip install farl
-```
-
-### Optional Dependencies
-
-For Redis backend support:
-
-```bash
-pip install farl[redis]
-```
-
-## Quick Start
-
-```python
 from fastapi import Depends, FastAPI
 
 from farl import (
@@ -96,5 +61,3 @@ mng.create(dynamic_policy)
 @app.get("/exam4")
 @mng
 def managed_endpoint3(): ...
-
-```
