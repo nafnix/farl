@@ -3,9 +3,7 @@ from typing import cast
 from starlette.datastructures import MutableHeaders
 
 from farl.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
-from farl.utils import FarlState
-
-from .types import AsyncFarlProtocol, FarlProtocol
+from farl.types import AsyncFarlProtocol, FarlProtocol, FarlState
 
 
 class FarlMiddleware:

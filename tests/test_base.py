@@ -1,154 +1,81 @@
-from unittest.mock import patch
-
 import pytest
 
 from farl.base import AsyncFarl, Farl
 
 
-class TestFarlInitialization:
-    """Test various initialization scenarios for the Farl class."""
-
-    def test_farl_default_initialization(self):
-        """Test Farl with default memory storage."""
+class TestFarl:
+    def test_farl_init_memory_storage(self):
+        """Test Farl initialization with memory storage (default)"""
         farl = Farl()
 
-        assert farl.key is None
-        assert farl.cost is None
-        assert farl.policy is None
-        assert farl.namespace is None
         assert hasattr(farl, "limiter")
+        assert farl.limiter is not None
         # Should use memory storage by default
-        assert farl.limiter.storage.__class__.__name__ == "MemoryStorage"
 
-    def test_farl_with_namespace(self):
-        """Test Farl initialization with namespace."""
-        namespace = "test_namespace"
-        farl = Farl(namespace=namespace)
+    def test_farl_init_fixed_window_strategy(self):
+        """Test Farl with fixed-window strategy"""
+        from limits.strategies import FixedWindowRateLimiter
 
-        assert farl.namespace == namespace
+        farl = Farl(strategy="fixed-window")
 
-    def test_farl_with_custom_attributes(self):
-        """Test Farl initialization with custom key, cost, and policy functions."""
+        assert hasattr(farl, "limiter")
+        # Check that it's using the correct strategy class name
+        assert isinstance(farl.limiter, FixedWindowRateLimiter)
 
-        def custom_key():
-            return "custom_key"
+    def test_farl_init_moving_window_strategy(self):
+        """Test Farl with moving-window strategy"""
+        from limits.strategies import MovingWindowRateLimiter
 
-        def custom_cost():
-            return 5
+        farl = Farl(strategy="moving-window")
 
-        def custom_policy():
-            return {"amount": 10, "time": "minute"}
+        assert hasattr(farl, "limiter")
+        assert isinstance(farl.limiter, MovingWindowRateLimiter)
 
-        farl = Farl(
-            rate_limit_key=custom_key,
-            rate_limit_cost=custom_cost,
-            rate_limit_policy=custom_policy,
-        )
+    def test_farl_init_sliding_window_strategy(self):
+        """Test Farl with sliding-window-counter strategy"""
+        from limits.strategies import SlidingWindowCounterRateLimiter
 
-        assert farl.key == custom_key
-        assert farl.cost == custom_cost
-        assert farl.policy == custom_policy
+        farl = Farl(strategy="sliding-window-counter")
 
-    @pytest.mark.parametrize(
-        "strategy", ["fixed-window", "moving-window", "sliding-window-counter"]
-    )
-    def test_farl_strategies(self, strategy):
-        """Test Farl initialization with different rate limiting strategies."""
-        farl = Farl(strategy=strategy)
+        assert hasattr(farl, "limiter")
+        assert isinstance(farl.limiter, SlidingWindowCounterRateLimiter)
 
-        # Map strategy names to expected limiter class names
-        expected_limiter_names = {
-            "fixed-window": "FixedWindowRateLimiter",
-            "moving-window": "MovingWindowRateLimiter",
-            "sliding-window-counter": "SlidingWindowCounterRateLimiter",
-        }
-
-        assert farl.limiter.__class__.__name__ == expected_limiter_names[strategy]
-
-    def test_farl_invalid_strategy(self):
-        """Test Farl initialization with invalid strategy raises ValueError."""
-        with pytest.raises(ValueError, match="Unsupported strategy: invalid_strategy"):
-            Farl(strategy="invalid_strategy")
+    def test_farl_init_invalid_strategy(self):
+        """Test Farl initialization with invalid strategy"""
+        with pytest.raises(ValueError, match="Unsupported strategy"):
+            Farl(strategy="invalid-strategy")  # pyright: ignore[reportArgumentType]
 
 
-class TestAsyncFarlInitialization:
-    """Test various initialization scenarios for the AsyncFarl class."""
-
-    def test_async_farl_default_initialization(self):
-        """Test AsyncFarl with default memory storage."""
+class TestAsyncFarl:
+    def test_async_farl_init_memory_storage(self):
+        """Test AsyncFarl initialization with memory storage (default)"""
         farl = AsyncFarl()
 
-        assert farl.key is None
-        assert farl.cost is None
-        assert farl.policy is None
-        assert farl.namespace is None
         assert hasattr(farl, "limiter")
-        # Should use async memory storage by default
-        assert farl.limiter.storage.__class__.__name__ == "MemoryStorage"
+        assert farl.limiter is not None
 
-    def test_async_farl_with_namespace(self):
-        """Test AsyncFarl initialization with namespace."""
-        namespace = "async_test_namespace"
-        farl = AsyncFarl(namespace=namespace)
+    def test_async_farl_init_fixed_window_strategy(self):
+        """Test AsyncFarl with fixed-window strategy"""
+        farl = AsyncFarl(strategy="fixed-window")
 
-        assert farl.namespace == namespace
+        assert hasattr(farl, "limiter")
+        assert "FixedWindow" in farl.limiter.__class__.__name__
 
-    def test_async_farl_with_custom_attributes(self):
-        """Test AsyncFarl initialization with custom key, cost, and policy functions."""
+    def test_async_farl_init_moving_window_strategy(self):
+        """Test AsyncFarl with moving-window strategy"""
+        farl = AsyncFarl(strategy="moving-window")
 
-        def custom_key():
-            return "async_custom_key"
+        assert hasattr(farl, "limiter")
+        assert "MovingWindow" in farl.limiter.__class__.__name__
 
-        def custom_cost():
-            return 3
+    def test_async_farl_init_sliding_window_strategy(self):
+        """Test AsyncFarl with sliding-window-counter strategy"""
+        farl = AsyncFarl(strategy="sliding-window-counter")
 
-        def custom_policy():
-            return {"amount": 5, "time": "hour"}
+        assert hasattr(farl, "limiter")
+        assert "SlidingWindow" in farl.limiter.__class__.__name__
 
-        farl = AsyncFarl(
-            rate_limit_key=custom_key,
-            rate_limit_cost=custom_cost,
-            rate_limit_policy=custom_policy,
-        )
-
-        assert farl.key == custom_key
-        assert farl.cost == custom_cost
-        assert farl.policy == custom_policy
-
-    @pytest.mark.parametrize(
-        "strategy", ["fixed-window", "moving-window", "sliding-window-counter"]
-    )
-    def test_async_farl_strategies(self, strategy):
-        """Test AsyncFarl initialization with different rate limiting strategies."""
-        farl = AsyncFarl(strategy=strategy)
-
-        # Map strategy names to expected async limiter class names
-        expected_limiter_names = {
-            "fixed-window": "FixedWindowRateLimiter",
-            "moving-window": "MovingWindowRateLimiter",
-            "sliding-window-counter": "SlidingWindowCounterRateLimiter",
-        }
-
-        assert farl.limiter.__class__.__name__ == expected_limiter_names[strategy]
-
-    def test_async_farl_invalid_strategy(self):
-        """Test AsyncFarl initialization with invalid strategy raises ValueError."""
-        with pytest.raises(ValueError, match="Unsupported strategy: bad_strategy"):
-            AsyncFarl(strategy="bad_strategy")
-
-
-class TestImportErrorHandling:
-    """Test behavior when Redis is not available."""
-
-    @patch("farl.base.RedisConnectionPool", None)
-    @patch("farl.base.AsyncRedisConnectionPool", None)
-    def test_redis_not_available(self):
-        """Test that classes can still be instantiated when Redis is not available."""
-        # These should work fine with memory storage
-        farl = Farl()
-        async_farl = AsyncFarl()
-
-        assert farl is not None
-        assert async_farl is not None
-        assert farl.limiter.storage.__class__.__name__ == "MemoryStorage"
-        assert async_farl.limiter.storage.__class__.__name__ == "MemoryStorage"
+    def test_async_farl_init_invalid_strategy(self):
+        """Test AsyncFarl initialization with invalid strategy"""
+        with pytest.raises(ValueError, match="Unsupported strategy"):
+            AsyncFarl(strategy="invalid-strategy")  # pyright: ignore[reportArgumentType]

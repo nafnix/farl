@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from farl.constants import HEADER_RATELIMIT, HEADER_RATELIMIT_POLICY, STATE_KEY
 from farl.middleware import FarlMiddleware
-from farl.utils import FarlState, HeaderRateLimit, HeaderRateLimitPolicy
+from farl.types import FarlState, HeaderRateLimit, HeaderRateLimitPolicy
 
 
 app = FastAPI()

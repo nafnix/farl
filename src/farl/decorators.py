@@ -1,28 +1,18 @@
 import inspect
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from fastapi import Depends
 
-from farl.exceptions import FarlError, QuotaExceeded
-from farl.types import (
-    AnyFarlProtocol,
-    CostResult,
-    GetCostDependency,
-    GetKeyDependency,
-    GetRateLimitPolicyDependency,
-    KeyResult,
-    RateLimitPolicy,
-)
 
-from .dependencies import rate_limit as rate_limit_dep
-from .dependencies.utils import request_endpoint
+if TYPE_CHECKING:
+    from .manager import RateLimitPolicyManager
 
 
 Fn = TypeVar("Fn", bound=Callable)
 
-INJECT_DEP_PREFIX = "__navio_ratelimit"
+INJECT_DEP_PREFIX = "__farl_ratelimit"
 
 
 def _exclude_kwds(kwds: dict[str, Any]):
@@ -49,27 +39,8 @@ def _create_call(fn: Fn) -> Fn:
     return hdlr  # pyright: ignore[reportReturnType]
 
 
-def rate_limit(
-    argument: RateLimitPolicy | GetRateLimitPolicyDependency,
-    *,
-    policy_name: str | None = None,
-    quota_unit: str | None = None,
-    get_key: KeyResult | GetKeyDependency | None = None,
-    get_partition_key: KeyResult | GetKeyDependency = request_endpoint,
-    get_cost: CostResult | GetCostDependency = 1,
-    error_class: type[FarlError] | None = QuotaExceeded,
-    farl: AnyFarlProtocol | None = None,
-):
-    dep = rate_limit_dep(
-        argument,
-        policy_name=policy_name,
-        quota_unit=quota_unit,
-        get_key=get_key,
-        get_partition_key=get_partition_key,
-        get_cost=get_cost,
-        error_class=error_class,
-        farl=farl,
-    )
+def rate_limit(manager: "RateLimitPolicyManager"):
+    dep = manager()
 
     def decorate(fn: Fn) -> Fn:
         new_fn = _create_call(fn)
@@ -88,6 +59,7 @@ def rate_limit(
             params.insert(-1, dep_param)
         else:
             params.append(dep_param)
+
         new_fn.__signature__ = sign.replace(parameters=params)
         return new_fn
 

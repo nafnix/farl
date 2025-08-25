@@ -1,6 +1,6 @@
 [project]
 name = "farl"
-version = "0.0.7"
+version = "0.0.8"
 description = "A FastAPI rate limiting library."
 readme = "README.md"
 authors = [
@@ -28,9 +28,11 @@ dev = [
     "ruff>=0.12.5",
 ]
 tests = [
+    "anyio>=4.9.0",
     "httpx>=0.28.1",
     "pytest>=8.4.1",
     "pytest-cov>=6.2.1",
+    "trio>=0.30.0",
 ]
 
 [tool.ruff.lint]
@@ -42,3 +44,6 @@ ignore = ["D", "ANN", "E114", "E117", "B008", "ISC001", "RUF002", "PGH003", "FA1
 [tool.ruff.lint.isort]
 case-sensitive = true
 lines-after-imports = 2
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "S105", "PT011", "PLC0415", "SLF001"]
